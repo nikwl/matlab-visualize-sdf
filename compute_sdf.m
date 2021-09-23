@@ -17,11 +17,6 @@ C_sdf = get_sdf(complete_gon, qpx, qpy);
 B_sdf = get_sdf(broken_gon, qpx, qpy);
 R_sdf = get_sdf(restoration_gon, qpx, qpy);
 
-% clamp = 0.1;
-% C_sdf = clamper(C_sdf, clamp);
-% B_sdf = clamper(B_sdf, clamp);
-% R_sdf = clamper(R_sdf, clamp);
-
 % C_occ = get_occ(complete_gon, qpx, qpy);
 % R_occ = get_occ(restoration_gon, qpx, qpy);
 
@@ -88,12 +83,6 @@ title("sigmoid");
 
 %%
 
-% Clips the values between -/+ clipv
-function [arr] = clamper(arr, clipv)
-arr(arr>clipv) = clipv;
-arr(arr<-clipv) = -clipv;
-end
-
 % The sigmoid function
 function [y] = sigmoid(x, e)
 y = 1./(1 + exp(-1.*(x)).^e);
@@ -102,6 +91,18 @@ end
 % The signed distance function
 function [d_min] = get_sdf(gon, qpx, qpy)
 d_min = p_poly_dist(qpx, qpy, gon.Vertices(:,1), gon.Vertices(:,2));
+end
+
+% The signed distance function
+function [d_min] = get_tsdf(gon, qpx, qpy, trunc)
+d_min = p_poly_dist(qpx, qpy, gon.Vertices(:,1), gon.Vertices(:,2));
+d_min = clamper(d_min, trunc);
+end
+
+% Clips the values between -/+ clipv
+function [arr] = clamper(arr, clipv)
+arr(arr>clipv) = clipv;
+arr(arr<-clipv) = -clipv;
 end
 
 % The occupancy function
