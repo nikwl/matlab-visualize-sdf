@@ -1,42 +1,45 @@
 
-% Generate our three polygons
-complete_gon = polyshape([0 0 1 1], [1 0 0 1]);
-broken_gon = polyshape([0 0 0.5 0.5],[1 0 0 1]);
-restoration_gon = subtract(complete_gon, broken_gon);
+% Generate our polygons
+complete_gon = polyshape([0 0 1 1], [1 0 0 1]); % Square
+% complete_gon = polyshape(circle(0.5, [0.5, 0.5])); % Circle
+% primitive_gon = polyshape([0.0 0.0 0.5 0.5],[1.0 0.0 0.0 1.0]); % Just big enough primitive
+primitive_gon = polyshape([-0.1 -0.1 0.5 0.5],[1.1 -0.1 -0.1 1.1]); % Slightly bigger primitive
+% primitive_gon = polyshape([-5 -5 0.5 0.5],[1.1 -0.1 -0.1 1.1]); % Medium primitive
+% primitive_gon = polyshape([-5 -5 0.5 0.5],[5 -5 -5 5]); % Really big primitive
+% primitive_gon = polyshape([-5 -5 100 0.5 0.5 100],[5 -5 -5 0 1 5]); % Really big primitive that wraps around the complete object
 
-% Generate query points
-density = 128;
-x_scan = -0.2:(1/density):1.2;
-y_scan = -0.2:(1/density):1.2;
-[X,Y] = meshgrid(x_scan,y_scan);
-qpx = reshape(X, [length(X)^2, 1]);
-qpy = reshape(Y, [length(X)^2, 1]);
+% Compute the subraction 
+fractured_gon = subtract(complete_gon, primitive_gon);
 
 % Get sdf/occ values
+[qpx, qpy, X, Y] = query_points(128);
 C_sdf = get_sdf(complete_gon, qpx, qpy);
-B_sdf = get_sdf(broken_gon, qpx, qpy);
-R_sdf = get_sdf(restoration_gon, qpx, qpy);
+F_sdf = get_sdf(fractured_gon, qpx, qpy);
+P_sdf = get_sdf(primitive_gon, qpx, qpy);
 
-% C_occ = get_occ(complete_gon, qpx, qpy);
-% R_occ = get_occ(restoration_gon, qpx, qpy);
-
-% Raise sigmoid to this exponent
-e = 1; 
+% Compute max(C, -T)
+[max_v, max_arg] = max([C_sdf, -P_sdf], [], 2);
 
 % Plot names, values, and isosurfaces
-names = ["sigmoid(sdf(C))", "sigmoid(sdf(R))", "-(sigmoid(sdf(C)) - sigmoid(sdf(R)))", "-(sigmoid(sdf(B)) - 1)"];
-values = [sigmoid(C_sdf, e), sigmoid(R_sdf, e), -(sigmoid(C_sdf, e) - sigmoid(R_sdf, e)), -(sigmoid(B_sdf, e) - 1)];
-levels = [0.5, 0.5, 0.5, 0.5];
+% names = ["sdf(C)", "sdf(B)", "sdf(T)", "max(sdf(C), -sdf(T))"];
+% values = [C_sdf, B_sdf, T_sdf, max_v];
+names = ["sdf(C)", "sdf(F)", "sdf(P)", "max(sdf(C), -sdf(P))", "error", "argmax C = (0) -P = (1)"];
+values = [C_sdf, F_sdf, P_sdf, max_v,  abs(F_sdf - max_v), max_arg-1];
+
+% Levels at which to extract the isosurface
+levels = [0.0, 0.0, 0.0, 0.0, 0.0, 0.5];
 
 % Make all plots use same color scale?
-rescale = false;
+rescale = [true, true, true, true, false, false];
 
-% Overlay the polygons on the plot
-overlay_polygons = false;
+% Overlay the polygons on the plot in red
+overlay_polygons = [false, false, false, true, true, true];
 
+% Plot
 figure
 for i = 1:size(values,2)
-    subplot(2,2,i);
+    
+    subplot(2,3,i);
     
     % Plot the values as a filled contour
     [~,h] = contourf(...
@@ -47,16 +50,16 @@ for i = 1:size(values,2)
     title(names(i));
     hold on
     
-    % Plot the restoration polygon
-    if (overlay_polygons)
-        p = plot(restoration_gon);
-        p.EdgeColor = 'r';
-        p.FaceColor = 'none';
+    if (overlay_polygons(i))
+        p1 = plot(primitive_gon);
+        p1.EdgeColor = 'r';
+        p1.FaceColor = 'none';
+        p1.LineWidth = 2.0;
 
-        % Plot the broken polygon
-        p = plot(broken_gon);
-        p.EdgeColor = 'r';
-        p.FaceColor = 'none';
+        p2 = plot(complete_gon);
+        p2.EdgeColor = 'g';
+        p2.FaceColor = 'none';
+        p2.LineWidth = 2.0;
     end
     
     % Plot the isosurface extracted at the given label
@@ -67,24 +70,40 @@ for i = 1:size(values,2)
     set(h,'LineColor','k');
     
     % Rescale the color values so that they all fall in the same range
-    if (rescale)
+    if (rescale(i))
         caxis([min(min(values)), max(max(values))]);
     end
     colorbar
+    xlim([-0.2, 1.2]);
+    ylim([-0.2, 1.2]);
+     
+    if (overlay_polygons(i))
+        legend([p1, p2, h], 'Primitive', 'Complete', 'Isosurface');
+    else
+        legend([h], 'Isosurface');
+    end
 end
 
-%% 
-figure
-x = linspace(-5, 5, 1000);
-e = 100;
-y = sigmoid(x, e);
-plot(x, y);
-title("sigmoid");
+%% FUNCTIONS
 
-%%
+function [coords] = circle(radius, center)
+[x0,y0] = deal(center(1),center(2)); % Circle radius and center
+t=linspace(0,360,1000).'; t(end)=[]; % circle angular samples
+coords= [cosd(t), sind(t)]*radius+[x0,y0];
+end
+
+% Generate query points
+function [qpx, qpy, X, Y] = query_points(density)
+x_scan = -0.2:(1/density):1.2;
+y_scan = -0.2:(1/density):1.2;
+[X,Y] = meshgrid(x_scan,y_scan);
+qpx = reshape(X, [length(X)^2, 1]);
+qpy = reshape(Y, [length(X)^2, 1]);
+end
 
 % The sigmoid function
-function [y] = sigmoid(x, e)
+function [y] = sigmoid(x)
+e = 1; % Exponent to raise sigmoid to
 y = 1./(1 + exp(-1.*(x)).^e);
 end
 
@@ -93,7 +112,7 @@ function [d_min] = get_sdf(gon, qpx, qpy)
 d_min = p_poly_dist(qpx, qpy, gon.Vertices(:,1), gon.Vertices(:,2));
 end
 
-% The signed distance function
+% The truncated signed distance function
 function [d_min] = get_tsdf(gon, qpx, qpy, trunc)
 d_min = p_poly_dist(qpx, qpy, gon.Vertices(:,1), gon.Vertices(:,2));
 d_min = clamper(d_min, trunc);
